@@ -5,20 +5,13 @@ from urllib.parse import quote
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from pymongo import MongoClient
-from telegram import (
-    Update, 
-    InlineKeyboardButton, 
-    InlineKeyboardMarkup, 
-    InlineQueryResultArticle, 
-    InputTextMessageContent
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ChatJoinRequestHandler,
     CallbackQueryHandler,
     MessageHandler,
-    InlineQueryHandler,
     ContextTypes,
     filters,
 )
@@ -105,12 +98,10 @@ def run_web_server():
     server.serve_forever()
 
 # --- STYLED INLINE BUTTON HELPER ---
-def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None, switch_inline_query_current_chat=None):
+def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None):
     action = {}
     if url:
         action["url"] = url
-    elif switch_inline_query_current_chat is not None:
-        action["switch_inline_query_current_chat"] = switch_inline_query_current_chat
     else:
         action["callback_data"] = callback_data or "noop"
 
@@ -141,17 +132,17 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
     Step 1:
-    - Message ID 16 Bheja jayega RED Inline Button ke saath (Auto /start send karne ke liye).
+    - Message ID 16 Bheja jayega akela RED Inline Button ke saath.
     - Message ID 14 (WhatsApp & Telegram links) Bheja jayega.
     """
-    # MSG 16: Red Inline Button with Auto-send /start functionality
+    # MSG 16: Akela Red Inline Button
     keyboard_16 = [
         [
             styled_button(
                 "I'm Interested 🔴",
                 style="danger",  # RED COLOR BUTTON
                 icon_custom_emoji_id=EMOJI_INTERESTED,
-                switch_inline_query_current_chat="interested"
+                callback_data="btn_interested"
             )
         ]
     ]
@@ -184,102 +175,6 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
             from_chat_id=SOURCE_CHAT_ID,
             message_id=MSG_ID_16,
             reply_markup=markup_16
-        )
-        
-        # Send MSG 14
-        await context.bot.copy_message(
-            chat_id=user_id,
-            from_chat_id=SOURCE_CHAT_ID,
-            message_id=MSG_ID_14,
-            reply_markup=markup_14
-        )
+        )Lagta hai code poora nahi aaya ya aadhha hi cut gaya! 
 
-    except Exception as e:
-        logging.error(f"Error sending initial flow to user {user_id}: {e}")
-
-async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
-    """
-    Step 2:
-    - User details save in MongoDB.
-    - Send Message ID 18 (Payment Message).
-    """
-    save_user_to_mongo(user.id, user.first_name, user.username)
-
-    keyboard_18 = [
-        [
-            styled_button(
-                "Send Payment Screenshot",
-                style="primary",
-                icon_custom_emoji_id=EMOJI_PAYMENT,
-                url=URL_TG_PAYMENT
-            )
-        ]
-    ]
-    markup_18 = InlineKeyboardMarkup(keyboard_18)
-
-    try:
-        await context.bot.copy_message(
-            chat_id=user.id,
-            from_chat_id=SOURCE_CHAT_ID,
-            message_id=MSG_ID_18,
-            reply_markup=markup_18
-        )
-    except Exception as e:
-        logging.error(f"Error sending MSG_ID_18 to user {user.id}: {e}")
-
-# --- INLINE QUERY HANDLER (Button click par user ki taraf se auto /start bhejega) ---
-async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    results = [
-        InlineQueryResultArticle(
-            id="1",
-            title="🔴 Click to Send /start",
-            description="Is par click karke /start bhein",
-            input_message_content=InputTextMessageContent("/start")
-        )
-    ]
-    await update.inline_query.answer(results, cache_time=1)
-
-# --- HANDLERS ---
-
-async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-
-async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    request = update.chat_join_request
-    user = request.from_user
-    save_user_to_mongo(user.id, user.first_name, user.username)
-    await send_initial_flow(context, user.id, user.first_name)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    save_user_to_mongo(user.id, user.first_name, user.username)
-    
-    # Jab user pehli baar join karta hai ya /start bhejta hai:
-    # Agar usne button daba kar /start bheja hai toh payment flow (MSG 18) chala jayega.
-    await send_payment_flow(context, user)
-
-# --- BROADCAST LOGIC ---
-async def execute_broadcast(message_to_broadcast, context, admin_chat_id):
-    users = list(users_collection.find({"user_id": {"$nin": ADMIN_IDS}}, {"user_id": 1}))
-    total_users = len(users)
-
-    if total_users == 0:
-        await context.bot.send_message(chat_id=admin_chat_id, text="⚠️ Database me aur koi user nahi hai!")
-        return
-
-    for u in users:
-        u_id = u["user_id"]
-        try:
-            if message_to_broadcast.text:
-                await context.bot.send_message(chat_id=u_id, text=message_to_broadcast.text, entities=message_to_broadcast.entities)
-            elif message_to_broadcast.photo:
-                await context.bot.send_photo(chat_id=u_id, photo=message_to_broadcast.photo[-1].file_id, caption=message_to_broadcast.caption, caption_entities=message_to_broadcast.caption_entities)
-            elif message_to_broadcast.video:
-                await context.bot.send_video(chat_id=u_id, video=message_to_broadcastSure, code dene ke liye mujhe thoda context chahiye hoga:
-
-1. **Kis cheez ka code chahiye?** (e.g., website, mobile app, game, python script, etc.)
-2. **Kis programming language ya framework mein?** (e.g., Python, JavaScript, React, C++, HTML/CSS, etc.)
-3. **Pura functionality/feature kya hona chahiye?**
-
-Thoda detail batao, main aapko pura aur ready-to-run code likh kar deta hoon!
+Aap apna poora code, problem, ya aap kya banane ki koshish kar rahe hain yahan paste kar dijiye—main dekhta hoon ki usme kya bacha hai ya kya galti hai.
