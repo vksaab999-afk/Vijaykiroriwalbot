@@ -32,9 +32,9 @@ MONGO_URI = os.environ.get("MONGO_URI")
 SOURCE_CHAT_ID = 5785924075
 
 # Message IDs
-MSG_ID_16 = 16  # Welcome Message
+MSG_ID_16 = 16  # Initial Welcome Message
 MSG_ID_14 = 14  # WhatsApp & Telegram Contact Message
-MSG_ID_18 = 18  # Payment Message (Sent on clicking "I'm Interested")
+MSG_ID_18 = 18  # Payment Message (Triggered on /interested)
 
 # Contact Info & Pre-filled Messages
 TG_USERNAME = "vijaykiroriwal"
@@ -50,9 +50,9 @@ URL_WA_BUSINESS = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(WA_BUSINESS_TEXT
 URL_TG_READY = f"https://t.me/{TG_USERNAME}?text={quote(TG_READY_TEXT)}"
 
 # Custom Emoji IDs
-EMOJI_INTERESTED = "4956222745814762495"
-EMOJI_PAYMENT = "5447183459602669338"
-EMOJI_WHATSAPP = "5935973359480213803"
+EMOJI_INTERESTED = "4956222745814762495"  # Green / Success Emoji
+EMOJI_PAYMENT = "5447183459602669338"     # Blue / Primary Emoji
+EMOJI_WHATSAPP = "5935973359480213803"    # Green / WhatsApp Emoji
 # =======================================================
 
 # --- MONGODB SETUP ---
@@ -97,54 +97,73 @@ def run_web_server():
     server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# --- BUTTON CREATOR WITH CUSTOM EMOJI SUPPORT ---
-def create_button(text, url=None, callback_data=None, custom_emoji_id=None):
-    api_kwargs = {}
-    if custom_emoji_id:
-        api_kwargs["icon_custom_emoji_id"] = custom_emoji_id
-
+# --- STYLED BUTTON HELPER WITH COLOR & EMOJI SUPPORT ---
+def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None, switch_inline_query_current_chat=None):
+    action = {}
     if url:
+        action["url"] = url
+    elif switch_inline_query_current_chat is not None:
+        action["switch_inline_query_current_chat"] = switch_inline_query_current_chat
+    else:
+        action["callback_data"] = callback_data or "noop"
+
+    modern = {"text": text, **action}
+    if style:
+        modern["style"] = style
+    if icon_custom_emoji_id:
+        modern["icon_custom_emoji_id"] = icon_custom_emoji_id
+
+    try:
+        return InlineKeyboardButton(**modern)
+    except TypeError:
+        api_kwargs = {}
+        if style:
+            api_kwargs["style"] = style
+        if icon_custom_emoji_id:
+            api_kwargs["icon_custom_emoji_id"] = icon_custom_emoji_id
+
         if api_kwargs:
-            return InlineKeyboardButton(text=text, url=url, api_kwargs=api_kwargs)
-        return InlineKeyboardButton(text=text, url=url)
-    elif callback_data:
-        if api_kwargs:
-            return InlineKeyboardButton(text=text, callback_data=callback_data, api_kwargs=api_kwargs)
-        return InlineKeyboardButton(text=text, callback_data=callback_data)
-    
-    return InlineKeyboardButton(text=text, callback_data="noop")
+            try:
+                return InlineKeyboardButton(text=text, api_kwargs=api_kwargs, **action)
+            except TypeError:
+                return InlineKeyboardButton(text=text, **action)
+        return InlineKeyboardButton(text=text, **action)
 
 # --- WORKFLOW FUNCTIONS ---
 
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
-    Step 1: Pehle Message ID 16 bhejega (I'm Interested button ke sath), 
-    aur TURANT baad Message ID 14 bhejega (WhatsApp & Telegram buttons ke sath).
+    Step 1:
+    - Pehle Message ID 16 bheja jaayega (Green 'success' button - "I'm Interested")
+    - Turant baad Message ID 14 bheja jaayega (Green WhatsApp Button + Blue Telegram Button)
     """
-    # Button for Message 16
+    # Msg 16 Button (Green Style + Custom Emoji + User Text Trigger)
     keyboard_16 = [
         [
-            create_button(
+            styled_button(
                 "I'm Interested",
-                callback_data="btn_interested",
-                custom_emoji_id=EMOJI_INTERESTED
+                style="success",
+                icon_custom_emoji_id=EMOJI_INTERESTED,
+                callback_data="btn_interested"
             )
         ]
     ]
     markup_16 = InlineKeyboardMarkup(keyboard_16)
 
-    # Buttons for Message 14
+    # Msg 14 Buttons (Green WhatsApp + Blue Telegram)
     keyboard_14 = [
         [
-            create_button(
+            styled_button(
                 "Start Business on WhatsApp",
-                url=URL_WA_BUSINESS,
-                custom_emoji_id=EMOJI_WHATSAPP
+                style="success",
+                icon_custom_emoji_id=EMOJI_WHATSAPP,
+                url=URL_WA_BUSINESS
             )
         ],
         [
-            create_button(
+            styled_button(
                 "I'm Ready (Telegram)",
+                style="primary",
                 url=URL_TG_READY
             )
         ]
@@ -152,7 +171,7 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
     markup_14 = InlineKeyboardMarkup(keyboard_14)
 
     try:
-        # Message ID 16 bhej raha hai
+        # Message 16
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
@@ -160,7 +179,7 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
             reply_markup=markup_16
         )
         
-        # Turant Message ID 14 bhej raha hai
+        # Turant Msg 14
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
@@ -168,25 +187,25 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
             reply_markup=markup_14
         )
     except Exception as e:
-        logging.error(f"Error sending MSG_ID_16 or 14 to user {user_id}: {e}")
+        logging.error(f"Error sending initial flow to user {user_id}: {e}")
 
-async def handle_interested_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_payment_flow(update: Update, context: ContextTypes.DEFAULT_TYPE, user):
     """
-    Step 2: Jab user 'I'm Interested' par click karega, tab SIRF Message ID 18 jayega.
+    Step 2:
+    Jab user 'I'm Interested' click kare ya text bhejey:
+    - MongoDB me User Data save/update hoga.
+    - SIRF Message ID 18 jaayega (Blue 'primary' Payment Button ke sath).
     """
-    query = update.callback_query
-    await query.answer()
-
-    user = query.from_user
     save_user_to_mongo(user.id, user.first_name, user.username)
 
-    # Button for Message 18
+    # Msg 18 Button (Blue/Primary Style + Custom Emoji)
     keyboard_18 = [
         [
-            create_button(
+            styled_button(
                 "Send Payment Screenshot",
-                url=URL_TG_PAYMENT,
-                custom_emoji_id=EMOJI_PAYMENT
+                style="primary",
+                icon_custom_emoji_id=EMOJI_PAYMENT,
+                url=URL_TG_PAYMENT
             )
         ]
     ]
@@ -201,6 +220,21 @@ async def handle_interested_click(update: Update, context: ContextTypes.DEFAULT_
         )
     except Exception as e:
         logging.error(f"Error sending MSG_ID_18 to user {user.id}: {e}")
+
+async def handle_interested_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await send_payment_flow(update, context, query.from_user)
+
+async def handle_user_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Jab user chat me text bhejega (e.g. /interested ya 'I'm Interested')
+    """
+    user = update.effective_user
+    text = update.message.text.lower() if update.message.text else ""
+    
+    if "interested" in text or text == "/interested":
+        await send_payment_flow(update, context, user)
 
 # --- HANDLERS ---
 
@@ -299,10 +333,14 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
+    app.add_handler(CommandHandler("interested", handle_user_text_command))
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
 
-    # Callback Query Handler for "I'm Interested" button
+    # Callback Query Handler for Inline Buttons
     app.add_handler(CallbackQueryHandler(handle_interested_click, pattern="^btn_interested$"))
+
+    # Text Handler for user messages
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.User(ADMIN_IDS), handle_user_text_command))
 
     # Admin Auto Broadcast Handler
     app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & ~filters.COMMAND, auto_broadcast))
