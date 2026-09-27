@@ -33,18 +33,26 @@ SOURCE_CHAT_ID = 5785924075
 
 # Message IDs
 MSG_ID_16 = 16  # Initial Welcome Message
+MSG_ID_14 = 14  # WhatsApp & Telegram Contact Message
 MSG_ID_18 = 18  # Payment Message
 
 # Contact Info & Pre-filled Messages
 TG_USERNAME = "vijaykiroriwal"
-TG_PAYMENT_TEXT = "Vijay sir mene payment kar diya hai niche screenshot bhej raha hu"
+WHATSAPP_NUMBER = "8233476434"
 
-# Deep-link URL with pre-filled text
+TG_PAYMENT_TEXT = "Vijay sir mene payment kar diya hai niche screenshot bhej raha hu"
+WA_BUSINESS_TEXT = "Vijay sir mene telegram pe aapse baat ki thii mujhe business shuru karna hai ✅"
+TG_READY_TEXT = "I'm ready"
+
+# Deep-link URLs with pre-filled text
 URL_TG_PAYMENT = f"https://t.me/{TG_USERNAME}?text={quote(TG_PAYMENT_TEXT)}"
+URL_WA_BUSINESS = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(WA_BUSINESS_TEXT)}"
+URL_TG_READY = f"https://t.me/{TG_USERNAME}?text={quote(TG_READY_TEXT)}"
 
 # Custom Emoji IDs for Inline Buttons
 EMOJI_INTERESTED = "4956222745814762495"  # Red / Danger Icon Emoji
 EMOJI_PAYMENT = "5447183459602669338"     # Blue / Primary Emoji
+EMOJI_WHATSAPP = "5935973359480213803"    # Green / WhatsApp Emoji
 # =======================================================
 
 # --- MONGODB SETUP ---
@@ -125,7 +133,9 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
     """
     Step 1:
     - Message ID 16 Bheja jayega RED Inline Button ke saath.
+    - Message ID 14 (WhatsApp & Telegram links) Bheja jayega.
     """
+    # MSG 16: Red Inline Button
     keyboard_16 = [
         [
             styled_button(
@@ -138,21 +148,51 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
     ]
     markup_16 = InlineKeyboardMarkup(keyboard_16)
 
+    # MSG 14: WhatsApp & Telegram Buttons
+    keyboard_14 = [
+        [
+            styled_button(
+                "Start Business on WhatsApp",
+                style="success",
+                icon_custom_emoji_id=EMOJI_WHATSAPP,
+                url=URL_WA_BUSINESS
+            )
+        ],
+        [
+            styled_button(
+                "I'm Ready (Telegram)",
+                style="primary",
+                url=URL_TG_READY
+            )
+        ]
+    ]
+    markup_14 = InlineKeyboardMarkup(keyboard_14)
+
     try:
+        # Send MSG 16
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
             message_id=MSG_ID_16,
             reply_markup=markup_16
         )
+        
+        # Send MSG 14
+        await context.bot.copy_message(
+            chat_id=user_id,
+            from_chat_id=SOURCE_CHAT_ID,
+            message_id=MSG_ID_14,
+            reply_markup=markup_14
+        )
+
     except Exception as e:
         logging.error(f"Error sending initial flow to user {user_id}: {e}")
 
 async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     """
     Step 2:
-    - MongoDB me User details save honge.
-    - Message ID 18 (Payment Message) bheja jayega.
+    - User details save in MongoDB.
+    - Send Message ID 18 (Payment Message).
     """
     save_user_to_mongo(user.id, user.first_name, user.username)
 
@@ -182,10 +222,11 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
 
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Direct Inline Red Button Click Handler
+    Jab user Red Button Click karta hai, toh bot usko /start ki tarah process
+    karke instantly Payment Message (MSG 18) bhej deta hai.
     """
     query = update.callback_query
-    await query.answer()  # Click animation response
+    await query.answer()
 
     if query.data == "btn_interested":
         user = query.from_user
@@ -287,7 +328,7 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
-    # Inline Button Callback Handler
+    # Callback Query Handler for Inline Red Button
     app.add_handler(CallbackQueryHandler(handle_button_click))
     
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
