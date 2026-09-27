@@ -32,9 +32,9 @@ MONGO_URI = os.environ.get("MONGO_URI")
 SOURCE_CHAT_ID = 5785924075
 
 # Message IDs
-MSG_ID_16 = 16  # Initial welcome message with "I'm Interested" button
-MSG_ID_18 = 18  # Follow-up message sent after interest button click
-MSG_ID_14 = 14  # WhatsApp & Telegram contact message
+MSG_ID_16 = 16  # Welcome Message
+MSG_ID_14 = 14  # WhatsApp & Telegram Contact Message
+MSG_ID_18 = 18  # Payment Message (Sent on clicking "I'm Interested")
 
 # Contact Info & Pre-filled Messages
 TG_USERNAME = "vijaykiroriwal"
@@ -49,7 +49,7 @@ URL_TG_PAYMENT = f"https://t.me/{TG_USERNAME}?text={quote(TG_PAYMENT_TEXT)}"
 URL_WA_BUSINESS = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(WA_BUSINESS_TEXT)}"
 URL_TG_READY = f"https://t.me/{TG_USERNAME}?text={quote(TG_READY_TEXT)}"
 
-# Custom Emoji IDs (Pass through api_kwargs for custom emoji support)
+# Custom Emoji IDs
 EMOJI_INTERESTED = "4956222745814762495"
 EMOJI_PAYMENT = "5447183459602669338"
 EMOJI_WHATSAPP = "5935973359480213803"
@@ -97,63 +97,94 @@ def run_web_server():
     server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# --- SAFE BUTTON HELPER ---
+# --- BUTTON CREATOR WITH CUSTOM EMOJI SUPPORT ---
 def create_button(text, url=None, callback_data=None, custom_emoji_id=None):
-    kwargs = {}
+    api_kwargs = {}
     if custom_emoji_id:
-        kwargs["api_kwargs"] = {"icon_custom_emoji_id": custom_emoji_id}
+        api_kwargs["icon_custom_emoji_id"] = custom_emoji_id
 
     if url:
-        return InlineKeyboardButton(text=text, url=url, **kwargs)
+        if api_kwargs:
+            return InlineKeyboardButton(text=text, url=url, api_kwargs=api_kwargs)
+        return InlineKeyboardButton(text=text, url=url)
     elif callback_data:
-        return InlineKeyboardButton(text=text, callback_data=callback_data, **kwargs)
+        if api_kwargs:
+            return InlineKeyboardButton(text=text, callback_data=callback_data, api_kwargs=api_kwargs)
+        return InlineKeyboardButton(text=text, callback_data=callback_data)
+    
     return InlineKeyboardButton(text=text, callback_data="noop")
 
 # --- WORKFLOW FUNCTIONS ---
 
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
-    Step 1: Message ID 16 bhejta hai 'I'm Interested' button ke sath.
+    Step 1: Pehle Message ID 16 bhejega (I'm Interested button ke sath), 
+    aur TURANT baad Message ID 14 bhejega (WhatsApp & Telegram buttons ke sath).
     """
-    keyboard = [
+    # Button for Message 16
+    keyboard_16 = [
         [
             create_button(
-                "🟢 I'm Interested",
+                "I'm Interested",
                 callback_data="btn_interested",
                 custom_emoji_id=EMOJI_INTERESTED
             )
         ]
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+    markup_16 = InlineKeyboardMarkup(keyboard_16)
+
+    # Buttons for Message 14
+    keyboard_14 = [
+        [
+            create_button(
+                "Start Business on WhatsApp",
+                url=URL_WA_BUSINESS,
+                custom_emoji_id=EMOJI_WHATSAPP
+            )
+        ],
+        [
+            create_button(
+                "I'm Ready (Telegram)",
+                url=URL_TG_READY
+            )
+        ]
+    ]
+    markup_14 = InlineKeyboardMarkup(keyboard_14)
 
     try:
+        # Message ID 16 bhej raha hai
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
             message_id=MSG_ID_16,
-            reply_markup=reply_markup
+            reply_markup=markup_16
+        )
+        
+        # Turant Message ID 14 bhej raha hai
+        await context.bot.copy_message(
+            chat_id=user_id,
+            from_chat_id=SOURCE_CHAT_ID,
+            message_id=MSG_ID_14,
+            reply_markup=markup_14
         )
     except Exception as e:
-        logging.error(f"Error sending MSG_ID_16 to user {user_id}: {e}")
+        logging.error(f"Error sending MSG_ID_16 or 14 to user {user_id}: {e}")
 
 async def handle_interested_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Step 2: Jab user 'I'm Interested' click kare:
-    1. Callback answer karega taaki loading spinner hat jaye.
-    2. User data MongoDB me save karega.
-    3. INSTANT Msg ID 18 AND Msg ID 14 dono ek saath bheje jayenge.
+    Step 2: Jab user 'I'm Interested' par click karega, tab SIRF Message ID 18 jayega.
     """
     query = update.callback_query
-    await query.answer("Processing...")
+    await query.answer()
 
     user = query.from_user
     save_user_to_mongo(user.id, user.first_name, user.username)
 
-    # --- Message ID 18 Setup ---
+    # Button for Message 18
     keyboard_18 = [
         [
             create_button(
-                "🔵 Send Payment Screenshot",
+                "Send Payment Screenshot",
                 url=URL_TG_PAYMENT,
                 custom_emoji_id=EMOJI_PAYMENT
             )
@@ -161,42 +192,15 @@ async def handle_interested_click(update: Update, context: ContextTypes.DEFAULT_
     ]
     markup_18 = InlineKeyboardMarkup(keyboard_18)
 
-    # --- Message ID 14 Setup ---
-    keyboard_14 = [
-        [
-            create_button(
-                "🟢 WhatsApp Business",
-                url=URL_WA_BUSINESS,
-                custom_emoji_id=EMOJI_WHATSAPP
-            )
-        ],
-        [
-            create_button(
-                "🔵 I'm Ready (Telegram)",
-                url=URL_TG_READY
-            )
-        ]
-    ]
-    markup_14 = InlineKeyboardMarkup(keyboard_14)
-
-    # Send MSG 18 & MSG 14 concurrently/instant
     try:
-        await asyncio.gather(
-            context.bot.copy_message(
-                chat_id=user.id,
-                from_chat_id=SOURCE_CHAT_ID,
-                message_id=MSG_ID_18,
-                reply_markup=markup_18
-            ),
-            context.bot.copy_message(
-                chat_id=user.id,
-                from_chat_id=SOURCE_CHAT_ID,
-                message_id=MSG_ID_14,
-                reply_markup=markup_14
-            )
+        await context.bot.copy_message(
+            chat_id=user.id,
+            from_chat_id=SOURCE_CHAT_ID,
+            message_id=MSG_ID_18,
+            reply_markup=markup_18
         )
     except Exception as e:
-        logging.error(f"Error sending messages 18/14 to user {user.id}: {e}")
+        logging.error(f"Error sending MSG_ID_18 to user {user.id}: {e}")
 
 # --- HANDLERS ---
 
@@ -291,16 +295,16 @@ def main():
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Commands & Handlers
+    # Commands & Join Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
 
-    # Callback Query Handler
+    # Callback Query Handler for "I'm Interested" button
     app.add_handler(CallbackQueryHandler(handle_interested_click, pattern="^btn_interested$"))
 
-    # Admin Auto Broadcast
+    # Admin Auto Broadcast Handler
     app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & ~filters.COMMAND, auto_broadcast))
 
     print("Bot is running...")
