@@ -5,13 +5,20 @@ from urllib.parse import quote
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from pymongo import MongoClient
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import (
+    Update, 
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup, 
+    InlineQueryResultArticle, 
+    InputTextMessageContent
+)
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ChatJoinRequestHandler,
     CallbackQueryHandler,
     MessageHandler,
+    InlineQueryHandler,
     ContextTypes,
     filters,
 )
@@ -98,10 +105,12 @@ def run_web_server():
     server.serve_forever()
 
 # --- STYLED INLINE BUTTON HELPER ---
-def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None):
+def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None, switch_inline_query_current_chat=None):
     action = {}
     if url:
         action["url"] = url
+    elif switch_inline_query_current_chat is not None:
+        action["switch_inline_query_current_chat"] = switch_inline_query_current_chat
     else:
         action["callback_data"] = callback_data or "noop"
 
@@ -132,17 +141,17 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
     Step 1:
-    - Message ID 16 Bheja jayega RED Inline Button ke saath.
+    - Message ID 16 Bheja jayega RED Inline Button ke saath (Auto /start send karne ke liye).
     - Message ID 14 (WhatsApp & Telegram links) Bheja jayega.
     """
-    # MSG 16: Red Inline Button
+    # MSG 16: Red Inline Button with Auto-send /start functionality
     keyboard_16 = [
         [
             styled_button(
                 "I'm Interested 🔴",
                 style="danger",  # RED COLOR BUTTON
                 icon_custom_emoji_id=EMOJI_INTERESTED,
-                callback_data="btn_interested"
+                switch_inline_query_current_chat="interested"
             )
         ]
     ]
@@ -218,19 +227,23 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     except Exception as e:
         logging.error(f"Error sending MSG_ID_18 to user {user.id}: {e}")
 
+# --- INLINE QUERY HANDLER (Button click par user ki taraf se auto /start bhejega) ---
+async def inline_query_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    results = [
+        InlineQueryResultArticle(
+            id="1",
+            title="🔴 Click to Send /start",
+            description="Is par click karke /start bhein",
+            input_message_content=InputTextMessageContent("/start")
+        )
+    ]
+    await update.inline_query.answer(results, cache_time=1)
+
 # --- HANDLERS ---
 
 async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """
-    Jab user Red Button Click karta hai, toh bot usko /start ki tarah process
-    karke instantly Payment Message (MSG 18) bhej deta hai.
-    """
     query = update.callback_query
     await query.answer()
-
-    if query.data == "btn_interested":
-        user = query.from_user
-        await send_payment_flow(context, user)
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     request = update.chat_join_request
@@ -241,7 +254,10 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     save_user_to_mongo(user.id, user.first_name, user.username)
-    await send_initial_flow(context, user.id, user.first_name)
+    
+    # Jab user pehli baar join karta hai ya /start bhejta hai:
+    # Agar usne button daba kar /start bheja hai toh payment flow (MSG 18) chala jayega.
+    await send_payment_flow(context, user)
 
 # --- BROADCAST LOGIC ---
 async def execute_broadcast(message_to_broadcast, context, admin_chat_id):
@@ -260,84 +276,10 @@ async def execute_broadcast(message_to_broadcast, context, admin_chat_id):
             elif message_to_broadcast.photo:
                 await context.bot.send_photo(chat_id=u_id, photo=message_to_broadcast.photo[-1].file_id, caption=message_to_broadcast.caption, caption_entities=message_to_broadcast.caption_entities)
             elif message_to_broadcast.video:
-                await context.bot.send_video(chat_id=u_id, video=message_to_broadcast.video.file_id, caption=message_to_broadcast.caption, caption_entities=message_to_broadcast.caption_entities)
-            elif message_to_broadcast.audio:
-                await context.bot.send_audio(chat_id=u_id, audio=message_to_broadcast.audio.file_id, caption=message_to_broadcast.caption, caption_entities=message_to_broadcast.caption_entities)
-            elif message_to_broadcast.voice:
-                await context.bot.send_voice(chat_id=u_id, voice=message_to_broadcast.voice.file_id, caption=message_to_broadcast.caption, caption_entities=message_to_broadcast.caption_entities)
-            elif message_to_broadcast.document:
-                await context.bot.send_document(chat_id=u_id, document=message_to_broadcast.document.file_id, caption=message_to_broadcast.caption, caption_entities=message_to_broadcast.caption_entities)
-            
-            await asyncio.sleep(0.04)
-        except Exception as e:
-            logging.error(f"Error sending to {u_id}: {e}")
+                await context.bot.send_video(chat_id=u_id, video=message_to_broadcastSure, code dene ke liye mujhe thoda context chahiye hoga:
 
-    await context.bot.send_message(
-        chat_id=admin_chat_id, 
-        text="✅ Broadcast Completed!", 
-        parse_mode="Markdown"
-    )
+1. **Kis cheez ka code chahiye?** (e.g., website, mobile app, game, python script, etc.)
+2. **Kis programming language ya framework mein?** (e.g., Python, JavaScript, React, C++, HTML/CSS, etc.)
+3. **Pura functionality/feature kya hona chahiye?**
 
-async def auto_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    if msg.text and msg.text.startswith("/"):
-        return
-    await execute_broadcast(msg, context, update.effective_user.id)
-
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-
-    if msg.reply_to_message:
-        await execute_broadcast(msg.reply_to_message, context, update.effective_user.id)
-    else:
-        text_after_command = msg.text.replace("/broadcast", "").strip()
-        if text_after_command:
-            users = list(users_collection.find({"user_id": {"$nin": ADMIN_IDS}}, {"user_id": 1}))
-            for u in users:
-                try:
-                    await context.bot.send_message(chat_id=u["user_id"], text=text_after_command)
-                    await asyncio.sleep(0.04)
-                except:
-                    pass
-            await msg.reply_text("✅ Broadcast Completed!")
-        else:
-            await msg.reply_text("⚠️ Kripya message ke sath /broadcast likhein ya kisi message par reply karke /broadcast bhejein.")
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id in ADMIN_IDS:
-        total_users = users_collection.count_documents({})
-        await update.message.reply_text(f"📊 **Total Users:** `{total_users}`", parse_mode="Markdown")
-
-def main():
-    Thread(target=run_web_server, daemon=True).start()
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    # Commands & Handlers
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("broadcast", broadcast_command))
-    
-    # Callback Query Handler for Inline Red Button
-    app.add_handler(CallbackQueryHandler(handle_button_click))
-    
-    app.add_handler(ChatJoinRequestHandler(handle_join_request))
-
-    # Admin Auto Broadcast Handler
-    app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & ~filters.COMMAND, auto_broadcast))
-
-    print("Bot is running...")
-    app.run_polling()
-
-if __name__ == "__main__":
-    main()
+Thoda detail batao, main aapko pura aur ready-to-run code likh kar deta hoon!
