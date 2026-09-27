@@ -5,11 +5,12 @@ from urllib.parse import quote
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from pymongo import MongoClient
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ChatJoinRequestHandler,
+    CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
     filters,
@@ -41,7 +42,8 @@ TG_PAYMENT_TEXT = "Vijay sir mene payment kar diya hai niche screenshot bhej rah
 # Deep-link URL with pre-filled text
 URL_TG_PAYMENT = f"https://t.me/{TG_USERNAME}?text={quote(TG_PAYMENT_TEXT)}"
 
-# Custom Emoji ID for Payment Button
+# Custom Emoji IDs for Inline Buttons
+EMOJI_INTERESTED = "4956222745814762495"  # Red / Danger Icon Emoji
 EMOJI_PAYMENT = "5447183459602669338"     # Blue / Primary Emoji
 # =======================================================
 
@@ -122,22 +124,26 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
     Step 1:
-    - Message ID 16 Send karega.
-    - User ki chat mein Red "I'm Interested 🔴" Reply Keyboard button setup ho jayega.
+    - Message ID 16 Bheja jayega RED Inline Button ke saath.
     """
-    # RED BUTTON (Reply Keyboard - Click karte hi user ki taraf se auto text chala jaata hai)
-    reply_keyboard = [
-        [KeyboardButton("🔴 I'm Interested 🔴")]
+    keyboard_16 = [
+        [
+            styled_button(
+                "I'm Interested 🔴",
+                style="danger",  # RED COLOR BUTTON
+                icon_custom_emoji_id=EMOJI_INTERESTED,
+                callback_data="btn_interested"
+            )
+        ]
     ]
-    reply_markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=True)
+    markup_16 = InlineKeyboardMarkup(keyboard_16)
 
     try:
-        # Message 16 Send
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
             message_id=MSG_ID_16,
-            reply_markup=reply_markup
+            reply_markup=markup_16
         )
     except Exception as e:
         logging.error(f"Error sending initial flow to user {user_id}: {e}")
@@ -145,8 +151,8 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
 async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     """
     Step 2:
-    - MongoDB me User save hoga.
-    - Message ID 18 (Payment Message) bhejega.
+    - MongoDB me User details save honge.
+    - Message ID 18 (Payment Message) bheja jayega.
     """
     save_user_to_mongo(user.id, user.first_name, user.username)
 
@@ -174,15 +180,15 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
 
 # --- HANDLERS ---
 
-async def handle_user_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Jab user Red Button par click karega, user ki taraf se auto text aayega
-    aur bot Payment Message (MSG 18) bhej dega.
+    Direct Inline Red Button Click Handler
     """
-    user = update.effective_user
-    text = update.message.text.strip() if update.message.text else ""
-    
-    if "Interested" in text or "interested" in text or "🔴" in text:
+    query = update.callback_query
+    await query.answer()  # Click animation response
+
+    if query.data == "btn_interested":
+        user = query.from_user
         await send_payment_flow(context, user)
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -281,10 +287,10 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
+    # Inline Button Callback Handler
+    app.add_handler(CallbackQueryHandler(handle_button_click))
+    
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
-
-    # Catch Text sent when user presses the keyboard button
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.User(ADMIN_IDS), handle_user_button_click))
 
     # Admin Auto Broadcast Handler
     app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & ~filters.COMMAND, auto_broadcast))
