@@ -134,10 +134,10 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
     Step 1:
-    - Message ID 16 Bheja jayega. Is button par click karte hi User ki taraf se /iminterested command fill hogi.
+    - Message ID 16 Bheja jayega. Is button par click karte hi User ki chat me /iminterested command prefill hogi.
     - Message ID 14 (WhatsApp & Telegram links) Bheja jayega.
     """
-    # Green "I'm Interested" Button - Click karne par user ki screen pe /iminterested ayega
+    # MSG 16: Green "I'm Interested" Button
     keyboard_16 = [
         [
             styled_button(
@@ -150,7 +150,7 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
     ]
     markup_16 = InlineKeyboardMarkup(keyboard_16)
 
-    # Inline keyboard for Msg 14
+    # MSG 14: WhatsApp & Telegram Buttons
     keyboard_14 = [
         [
             styled_button(
@@ -193,8 +193,8 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
 async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     """
     Step 2:
-    Jab User ki taraf se '/iminterested' aayega:
-    - MongoDB me User details update honge.
+    Jab User ki taraf se '/iminterested' message aayega:
+    - MongoDB me User details save honge.
     - Message ID 18 (Payment Message) bheja jayega.
     """
     save_user_to_mongo(user.id, user.first_name, user.username)
@@ -227,7 +227,7 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
 
 async def handle_iminterested_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    JAB USER KI TARAF SE `/iminterested` BHEJA JAYEGA
+    JAB USER KI TARAF SE `/iminterested` COMMAND RECEIVE HOGI
     """
     user = update.effective_user
     await send_payment_flow(context, user)
@@ -333,12 +333,12 @@ def main():
 
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    # Commands & Join Handlers
+    # Commands & Handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
-    # User Command Handler
+    # Catch /iminterested command sent by user
     app.add_handler(CommandHandler("iminterested", handle_iminterested_command))
     
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
