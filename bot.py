@@ -5,12 +5,11 @@ from urllib.parse import quote
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from pymongo import MongoClient
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ChatJoinRequestHandler,
-    CallbackQueryHandler,
     MessageHandler,
     ContextTypes,
     filters,
@@ -33,26 +32,17 @@ SOURCE_CHAT_ID = 5785924075
 
 # Message IDs
 MSG_ID_16 = 16  # Initial Welcome Message
-MSG_ID_14 = 14  # WhatsApp & Telegram Contact Message
 MSG_ID_18 = 18  # Payment Message
 
 # Contact Info & Pre-filled Messages
 TG_USERNAME = "vijaykiroriwal"
-WHATSAPP_NUMBER = "8233476434"
-
 TG_PAYMENT_TEXT = "Vijay sir mene payment kar diya hai niche screenshot bhej raha hu"
-WA_BUSINESS_TEXT = "Vijay sir mene telegram pe aapse baat ki thii mujhe business shuru karna hai ✅"
-TG_READY_TEXT = "I'm ready"
 
-# Deep-link URLs with pre-filled text
+# Deep-link URL with pre-filled text
 URL_TG_PAYMENT = f"https://t.me/{TG_USERNAME}?text={quote(TG_PAYMENT_TEXT)}"
-URL_WA_BUSINESS = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(WA_BUSINESS_TEXT)}"
-URL_TG_READY = f"https://t.me/{TG_USERNAME}?text={quote(TG_READY_TEXT)}"
 
-# Custom Emoji IDs for Inline Buttons
-EMOJI_INTERESTED = "4956222745814762495"  # Green / Success Emoji
+# Custom Emoji ID for Payment Button
 EMOJI_PAYMENT = "5447183459602669338"     # Blue / Primary Emoji
-EMOJI_WHATSAPP = "5935973359480213803"    # Green / WhatsApp Emoji
 # =======================================================
 
 # --- MONGODB SETUP ---
@@ -132,65 +122,31 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
     Step 1:
-    - MSG 16: Instant Callback Button
-    - MSG 14: WhatsApp & Telegram contact buttons
+    - Message ID 16 Send karega.
+    - User ki chat mein Red "I'm Interested 🔴" Reply Keyboard button setup ho jayega.
     """
-    keyboard_16 = [
-        [
-            styled_button(
-                "I'm Interested",
-                style="success",
-                icon_custom_emoji_id=EMOJI_INTERESTED,
-                callback_data="btn_interested"
-            )
-        ]
+    # RED BUTTON (Reply Keyboard - Click karte hi user ki taraf se auto text chala jaata hai)
+    reply_keyboard = [
+        [KeyboardButton("🔴 I'm Interested 🔴")]
     ]
-    markup_16 = InlineKeyboardMarkup(keyboard_16)
-
-    keyboard_14 = [
-        [
-            styled_button(
-                "Start Business on WhatsApp",
-                style="success",
-                icon_custom_emoji_id=EMOJI_WHATSAPP,
-                url=URL_WA_BUSINESS
-            )
-        ],
-        [
-            styled_button(
-                "I'm Ready (Telegram)",
-                style="primary",
-                url=URL_TG_READY
-            )
-        ]
-    ]
-    markup_14 = InlineKeyboardMarkup(keyboard_14)
+    reply_markup = ReplyKeyboardMarkup(reply_keyboard, resize_keyboard=True, one_time_keyboard=True)
 
     try:
-        # Send Message 16
+        # Message 16 Send
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
             message_id=MSG_ID_16,
-            reply_markup=markup_16
+            reply_markup=reply_markup
         )
-        
-        # Send Message 14
-        await context.bot.copy_message(
-            chat_id=user_id,
-            from_chat_id=SOURCE_CHAT_ID,
-            message_id=MSG_ID_14,
-            reply_markup=markup_14
-        )
-
     except Exception as e:
         logging.error(f"Error sending initial flow to user {user_id}: {e}")
 
 async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     """
     Step 2:
-    - User details save in MongoDB
-    - Send Message ID 18 (Payment Message)
+    - MongoDB me User save hoga.
+    - Message ID 18 (Payment Message) bhejega.
     """
     save_user_to_mongo(user.id, user.first_name, user.username)
 
@@ -218,15 +174,15 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
 
 # --- HANDLERS ---
 
-async def handle_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_user_button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Direct Button Click Event Handler
+    Jab user Red Button par click karega, user ki taraf se auto text aayega
+    aur bot Payment Message (MSG 18) bhej dega.
     """
-    query = update.callback_query
-    await query.answer()  # Click animation notify
-
-    if query.data == "btn_interested":
-        user = query.from_user
+    user = update.effective_user
+    text = update.message.text.strip() if update.message.text else ""
+    
+    if "Interested" in text or "interested" in text or "🔴" in text:
         await send_payment_flow(context, user)
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,10 +281,10 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
-    # Callback Query Handler (Handles Direct Single Click on Button)
-    app.add_handler(CallbackQueryHandler(handle_button_click))
-    
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
+
+    # Catch Text sent when user presses the keyboard button
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.User(ADMIN_IDS), handle_user_button_click))
 
     # Admin Auto Broadcast Handler
     app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & ~filters.COMMAND, auto_broadcast))
