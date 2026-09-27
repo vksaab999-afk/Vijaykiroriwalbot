@@ -5,7 +5,7 @@ from urllib.parse import quote
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from pymongo import MongoClient
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -49,7 +49,7 @@ URL_TG_PAYMENT = f"https://t.me/{TG_USERNAME}?text={quote(TG_PAYMENT_TEXT)}"
 URL_WA_BUSINESS = f"https://wa.me/{WHATSAPP_NUMBER}?text={quote(WA_BUSINESS_TEXT)}"
 URL_TG_READY = f"https://t.me/{TG_USERNAME}?text={quote(TG_READY_TEXT)}"
 
-# Custom Emoji IDs
+# Custom Emoji IDs for Inline Buttons
 EMOJI_INTERESTED = "4956222745814762495"  # Green / Success Emoji
 EMOJI_PAYMENT = "5447183459602669338"     # Blue / Primary Emoji
 EMOJI_WHATSAPP = "5935973359480213803"    # Green / WhatsApp Emoji
@@ -97,13 +97,11 @@ def run_web_server():
     server = HTTPServer(("0.0.0.0", port), SimpleHTTPRequestHandler)
     server.serve_forever()
 
-# --- STYLED BUTTON HELPER WITH COLOR & EMOJI SUPPORT ---
-def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None, switch_inline_query_current_chat=None):
+# --- STYLED INLINE BUTTON HELPER ---
+def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, callback_data=None):
     action = {}
     if url:
         action["url"] = url
-    elif switch_inline_query_current_chat is not None:
-        action["switch_inline_query_current_chat"] = switch_inline_query_current_chat
     else:
         action["callback_data"] = callback_data or "noop"
 
@@ -134,10 +132,11 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     """
     Step 1:
-    - Pehle Message ID 16 (Green 'success' button - "I'm Interested")
-    - Turant baad Message ID 14 (Green WhatsApp + Blue Telegram)
+    - Message ID 16 Bheja jayega.
+    - Message ID 14 (WhatsApp & Telegram links) Bheja jayega.
+    - User ke Keyboard par 'I'm Interested' / '/iminterested' ka button set kiya jayega jisse click karte hi USER KI TARAF SE MESSAGE JAYEGA.
     """
-    # Msg 16 Button
+    # Inline keyboard for Msg 16
     keyboard_16 = [
         [
             styled_button(
@@ -150,7 +149,7 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
     ]
     markup_16 = InlineKeyboardMarkup(keyboard_16)
 
-    # Msg 14 Buttons
+    # Inline keyboard for Msg 14
     keyboard_14 = [
         [
             styled_button(
@@ -170,6 +169,13 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
     ]
     markup_14 = InlineKeyboardMarkup(keyboard_14)
 
+    # Reply Keyboard Button - Is button par tap karte hi user ki taraf se message send hota hai
+    reply_keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("/iminterested")]],
+        resize_keyboard=True,
+        one_time_keyboard=True
+    )
+
     try:
         # Message 16
         await context.bot.copy_message(
@@ -179,26 +185,35 @@ async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, fi
             reply_markup=markup_16
         )
         
-        # Turant Msg 14
+        # Message 14 (Sath me User-side command button attach karenge)
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
             message_id=MSG_ID_14,
             reply_markup=markup_14
         )
+        
+        # Bottom Keyboard trigger message
+        await context.bot.send_message(
+            chat_id=user_id,
+            text="👇 Click below button to express interest:",
+            reply_markup=reply_keyboard
+        )
+
     except Exception as e:
         logging.error(f"Error sending initial flow to user {user_id}: {e}")
 
 async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     """
     Step 2:
-    Jab user '/iminterested' command ya button click kare:
-    - User details MongoDB me save honge.
-    - Message ID 18 (Payment Message) bheja jaayega.
+    Jab User ki taraf se '/iminterested' aayega:
+    - Bottom keyboard remove kar diya jayega.
+    - MongoDB me User details update honge.
+    - Message ID 18 (Payment Message) bheja jayega.
     """
     save_user_to_mongo(user.id, user.first_name, user.username)
 
-    # Msg 18 Button (Blue/Primary Style)
+    # Msg 18 Button (Blue Style + Custom Emoji)
     keyboard_18 = [
         [
             styled_button(
@@ -212,6 +227,7 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
     markup_18 = InlineKeyboardMarkup(keyboard_18)
 
     try:
+        # MSG 18 Send
         await context.bot.copy_message(
             chat_id=user.id,
             from_chat_id=SOURCE_CHAT_ID,
@@ -223,36 +239,32 @@ async def send_payment_flow(context: ContextTypes.DEFAULT_TYPE, user):
 
 # --- HANDLERS ---
 
-async def handle_interested_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    
-    user = query.from_user
-    # Chat me user ki command display karne ke liye text response
-    await context.bot.send_message(
-        chat_id=user.id,
-        text="👉 `/iminterested`",
-        parse_mode="Markdown"
-    )
-    
-    # Payment Flow Trigger
-    await send_payment_flow(context, user)
-
 async def handle_iminterested_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Jab user chat box me '/iminterested' type karke send kare
+    JAB USER KI TARAF SE `/iminterested` BHEJA JAYEGA
     """
     user = update.effective_user
+    # Send payment flow & remove user reply keyboard
+    await send_payment_flow(context, user)
+
+async def handle_interested_inline_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Agar user message ke neeche bane inline button 'I'm Interested' par click karta hai
+    """
+    query = update.callback_query
+    await query.answer()
+    user = query.from_user
+    
     await send_payment_flow(context, user)
 
 async def handle_user_text_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    Jab user general text ('interested', 'i am interested') bhejey
+    Agar user type karke koi bhi 'interested' text bhejta hai
     """
     user = update.effective_user
     text = update.message.text.lower() if update.message.text else ""
     
-    if "interested" in text:
+    if "interested" in text or "iminterested" in text:
         await send_payment_flow(context, user)
 
 async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -351,15 +363,15 @@ def main():
     app.add_handler(CommandHandler("stats", stats))
     app.add_handler(CommandHandler("broadcast", broadcast_command))
     
-    # Explicit /iminterested Command Handler
+    # Catch /iminterested command sent by user
     app.add_handler(CommandHandler("iminterested", handle_iminterested_command))
     
     app.add_handler(ChatJoinRequestHandler(handle_join_request))
 
-    # Callback Query Handler for "I'm Interested" Button
-    app.add_handler(CallbackQueryHandler(handle_interested_click, pattern="^btn_interested$"))
+    # Callback Query Handler for Inline Buttons
+    app.add_handler(CallbackQueryHandler(handle_interested_inline_click, pattern="^btn_interested$"))
 
-    # Text Handler for user messages
+    # Text Handler for general user text
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & ~filters.User(ADMIN_IDS), handle_user_text_command))
 
     # Admin Auto Broadcast Handler
