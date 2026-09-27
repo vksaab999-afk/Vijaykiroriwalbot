@@ -1,7 +1,8 @@
 import os
 import logging
 import asyncio
-from urllib.parse import quote
+import re
+from urllib.parse import quote, quote_plus
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from threading import Thread
 from pymongo import MongoClient
@@ -25,8 +26,24 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 # Multiple Admins Support
 ADMIN_IDS = [5785924075, 8802096404]
 
-# MongoDB Atlas URI
-MONGO_URI = os.environ.get("MONGO_URI")
+# MongoDB Atlas URI Fix for Special Characters
+MONGO_URI = os.environ.get("MONGO_URI", "")
+
+def format_mongo_uri(uri: str) -> str:
+    """Escapes special characters in password if present in standard mongodb/mongodb+srv URI"""
+    if not uri:
+        return uri
+    pattern = r"^(mongodb(?:\+srv)?://)([^:]+):([^@]+)@(.+)$"
+    match = re.match(pattern, uri)
+    if match:
+        prefix, user, password, rest = match.groups()
+        # Clean unencoded special characters in username & password
+        encoded_user = quote_plus(user)
+        encoded_pass = quote_plus(password)
+        return f"{prefix}{encoded_user}:{encoded_pass}@{rest}"
+    return uri
+
+FINAL_MONGO_URI = format_mongo_uri(MONGO_URI)
 
 # Source Chat & Message IDs
 SOURCE_CHAT_ID = 5785924075
@@ -56,7 +73,7 @@ EMOJI_WHATSAPP = "5935973359480213803"    # Green / WhatsApp Emoji
 # =======================================================
 
 # --- MONGODB SETUP ---
-mongo_client = MongoClient(MONGO_URI)
+mongo_client = MongoClient(FINAL_MONGO_URI)
 db = mongo_client["telegram_bot_db"]
 users_collection = db["users"]
 
@@ -113,68 +130,11 @@ def styled_button(text, *, style=None, icon_custom_emoji_id=None, url=None, call
 
     try:
         return InlineKeyboardButton(**modern)
-    except TypeError:
-        api_kwargs = {}
-        if style:
-            api_kwargs["style"] = style
-        if icon_custom_emoji_id:
-            api_kwargs["icon_custom_emoji_id"] = icon_custom_emoji_id
+    exceptSamajh gaya! Ho sakta hai pichhle code me koi bug ya logic mistake reh gayi ho. 
 
-        if api_kwargs:
-            try:
-                return InlineKeyboardButton(text=text, api_kwargs=api_kwargs, **action)
-            except TypeError:
-                return InlineKeyboardButton(text=text, **action)
-        return InlineKeyboardButton(text=text, **action)
+Galti pakadne aur usko sahi karne ke liye mujhe thoda context chahiye hoga:
 
-# --- WORKFLOW FUNCTIONS ---
+1. **Aap kaun sa code try kar rahe the?** (Kis programming language/framework me hai?)
+2. **Exactly kya dikkat ya error aa raha hai?** (Output galat aa raha hai, code crash ho raha hai, ya koi error message mil raha hai?)
 
-async def send_initial_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
-    """
-    Step 1:
-    - Message ID 16 Bheja jayega akela RED Inline Button ke saath.
-    - Message ID 14 (WhatsApp & Telegram links) Bheja jayega.
-    """
-    # MSG 16: Akela Red Inline Button
-    keyboard_16 = [
-        [
-            styled_button(
-                "I'm Interested 🔴",
-                style="danger",  # RED COLOR BUTTON
-                icon_custom_emoji_id=EMOJI_INTERESTED,
-                callback_data="btn_interested"
-            )
-        ]
-    ]
-    markup_16 = InlineKeyboardMarkup(keyboard_16)
-
-    # MSG 14: WhatsApp & Telegram Buttons
-    keyboard_14 = [
-        [
-            styled_button(
-                "Start Business on WhatsApp",
-                style="success",
-                icon_custom_emoji_id=EMOJI_WHATSAPP,
-                url=URL_WA_BUSINESS
-            )
-        ],
-        [
-            styled_button(
-                "I'm Ready (Telegram)",
-                style="primary",
-                url=URL_TG_READY
-            )
-        ]
-    ]
-    markup_14 = InlineKeyboardMarkup(keyboard_14)
-
-    try:
-        # Send MSG 16
-        await context.bot.copy_message(
-            chat_id=user_id,
-            from_chat_id=SOURCE_CHAT_ID,
-            message_id=MSG_ID_16,
-            reply_markup=markup_16
-        )Lagta hai code poora nahi aaya ya aadhha hi cut gaya! 
-
-Aap apna poora code, problem, ya aap kya banane ki koshish kar rahe hain yahan paste kar dijiye—main dekhta hoon ki usme kya bacha hai ya kya galti hai.
+Aap bas apna purana code (ya problem ka description) aur error yahan paste kar do. Main ise thoroughly re-check karke bilkul sahi aur working code dobara bhej deta hoon.
