@@ -25,8 +25,6 @@ logging.basicConfig(
 )
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN") 
-
-ADMIN_IDS = [5785924075, 8210667307]
 MONGO_URI = os.environ.get("MONGO_URI")
 
 SOURCE_CHAT_ID = 5785924075
@@ -206,34 +204,31 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(send_initial_welcome(context, user.id, user.first_name))
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
-        return
-
     try:
         total_users = users_collection.count_documents({})
         total_join_requests = events_collection.count_documents({"event_type": "join_request"})
         total_left = events_collection.count_documents({"event_type": "left"})
 
-        stats_message = (
-            f"<b>BOT ANALYTICS DASHBOARD</b>\n\n"
-            f" Total Users in Database: {total_users}\n"
-            f" Total Join Requests Received: {total_join_requests}\n"
-            f" Users Left / Unsubscribed: {total_left}"
-        )
-        await update.message.reply_text(stats_message, parse_mode="HTML")
+        stats_keyboard = [
+            [styled_button(f"Total Users: {total_users}", style="primary", icon_custom_emoji_id=EMOJI_TOTAL_USERS)],
+            [styled_button(f"Join Requests: {total_join_requests}", style="success", icon_custom_emoji_id=EMOJI_JOIN_REQS)],
+            [styled_button(f"Left Members: {total_left}", style="danger", icon_custom_emoji_id=EMOJI_LEFT_MEMBERS)]
+        ]
+        reply_markup = InlineKeyboardMarkup(stats_keyboard)
+
+        stats_message = "📊 <b>BOT ANALYTICS DASHBOARD</b>\n\nLive Database Statistics:"
+        await update.message.reply_text(stats_message, reply_markup=reply_markup, parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"Error fetching stats: {e}")
 
-async def broadcast_worker(queue, context, source_chat_id, message_id, reply_markup, stats):
+async def broadcast_worker(queue, context, from_chat_id, message_id, stats):
     while True:
         user_id = await queue.get()
         try:
             await context.bot.copy_message(
                 chat_id=user_id,
-                from_chat_id=source_chat_id,
-                message_id=message_id,
-                reply_markup=reply_markup
+                from_chat_id=from_chat_id,
+                message_id=message_id
             )
             stats["success"] += 1
         except RetryAfter as e:
@@ -241,9 +236,8 @@ async def broadcast_worker(queue, context, source_chat_id, message_id, reply_mar
             try:
                 await context.bot.copy_message(
                     chat_id=user_id,
-                    from_chat_id=source_chat_id,
-                    message_id=message_id,
-                    reply_markup=reply_markup
+                    from_chat_id=from_chat_id,
+                    message_id=message_id
                 )
                 stats["success"] += 1
             except Exception:
@@ -254,16 +248,13 @@ async def broadcast_worker(queue, context, source_chat_id, message_id, reply_mar
         finally:
             queue.task_done()
 
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    if user_id not in ADMIN_IDS:
+async def direct_message_broadcast_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if not update.message or update.message.text and update.message.text.startswith("/"):
         return
 
-    if not context.args or not context.args[0].isdigit():
-        await update.message.reply_text("<b>Usage:</b> /broadcast &lt;message_id&gt;", parse_mode="HTML")
-        return
+    save_user_to_mongo(user.id, user.first_name, user.username)
 
-    message_id = int(context.args[0])
     all_users = list(users_collection.find({}, {"user_id": 1}))
     total_targets = len(all_users)
 
@@ -271,7 +262,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No users found in database to broadcast.")
         return
 
-    status_msg = await update.message.reply_text(f"<b>Starting Broadcast to {total_targets} users...</b>", parse_mode="HTML")
+    status_msg = await update.message.reply_text(f"🚀 <b>Broadcasting message to {total_targets} users...</b>", parse_mode="HTML")
 
     queue = asyncio.Queue()
     for u in all_users:
@@ -279,7 +270,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     stats = {"success": 0, "failed": 0}
     workers = [
-        asyncio.create_task(broadcast_worker(queue, context, SOURCE_CHAT_ID, message_id, None, stats))
+        asyncio.create_task(broadcast_worker(queue, context, update.effective_chat.id, update.message.message_id, stats))
         for _ in range(NUM_WORKERS)
     ]
 
@@ -289,9 +280,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         w.cancel()
 
     await status_msg.edit_text(
-        f"<b>Broadcast Completed!</b>\n\n"
-        f" Success: {stats['success']}\n"
-        f" Failed: {stats['failed']}",
+        f"✅ <b>Broadcast Completed!</b>\n\n"
+        f"🎯 Success: {stats['success']}\n"
+        f"❌ Failed: {stats['failed']}",
         parse_mode="HTML"
     )
 
@@ -300,14 +291,14 @@ async def run_bot():
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("stats", stats_command))
-    application.add_handler(CommandHandler("broadcast", broadcast_command))
     application.add_handler(ChatJoinRequestHandler(handle_join_request))
     application.add_handler(ChatMemberHandler(handle_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
+    
+    application.add_handler(MessageHandler(filters.ALL & ~filters.COMMAND, direct_message_broadcast_handler))
 
     async with application:
         await application.start()
         await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
-        # Keep running
         await asyncio.Event().wait()
 
 def main():
