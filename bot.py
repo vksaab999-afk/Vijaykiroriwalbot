@@ -40,11 +40,12 @@ MSG_INFO_14 = 14
 # Step 2 Message ID
 MSG_STEP2_18 = 18
 
-# Emoji Custom IDs
+# Custom Emoji IDs
 EMOJI_RED_START = "4956222745814762495"
 EMOJI_TG_CHAT = "6170163662544707658"
 EMOJI_WA_CHAT = "5935973359480213803"
 EMOJI_FEEDBACK = "5332554596403404883"
+EMOJI_SCREENSHOT = "5388971216629412467"
 
 # Analytics Emojis
 EMOJI_STATS_HEADER = "5244837092042750681"
@@ -145,11 +146,11 @@ async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int,
             reply_markup=msg16_reply_markup
         )
 
-        autofill_text = urllib.parse.quote("Vijay bhai mujhe work shuru karna hai")
-        tg_autofill_url = f"https://t.me/vijaykiroriwal?text={autofill_text}"
+        autofill_text_14 = urllib.parse.quote("Vijay bhai mujhe work shuru karna hai")
+        tg_autofill_url_14 = f"https://t.me/vijaykiroriwal?text={autofill_text_14}"
 
         msg14_keyboard = [
-            [styled_button("Contact Vijay Bhai", style="primary", icon_custom_emoji_id=EMOJI_TG_CHAT, url=tg_autofill_url)],
+            [styled_button("Contact Vijay Bhai", style="primary", icon_custom_emoji_id=EMOJI_TG_CHAT, url=tg_autofill_url_14)],
             [styled_button("WhatsApp Chat", style="success", icon_custom_emoji_id=EMOJI_WA_CHAT, url="https://alvo.chat/8aJ7")],
             [styled_button("Feedback", style="danger", icon_custom_emoji_id=EMOJI_FEEDBACK, url="https://t.me/vijaykiroriwal")]
         ]
@@ -165,13 +166,23 @@ async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int,
     except Exception as e:
         logging.error(f"Could not send initial welcome content to user {user_id}: {e}")
 
-# --- STEP 2: MAIN FLOW (MSG 18) ---
+# --- STEP 2: MAIN FLOW (MSG 18 WITH SCREENSHOT BUTTON) ---
 async def send_full_original_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     try:
+        # Pre-filled Message for Payment Screenshot
+        autofill_text_18 = urllib.parse.quote("Vijay sir mene payment kar diya hai niche screenshot bhej raha hu dekh lijiye")
+        tg_autofill_url_18 = f"https://t.me/vijaykiroriwal?text={autofill_text_18}"
+
+        msg18_keyboard = [
+            [styled_button("SEND SCREENSHOT", style="primary", icon_custom_emoji_id=EMOJI_SCREENSHOT, url=tg_autofill_url_18)]
+        ]
+        msg18_reply_markup = InlineKeyboardMarkup(msg18_keyboard)
+
         await context.bot.copy_message(
             chat_id=user_id,
             from_chat_id=SOURCE_CHAT_ID,
-            message_id=MSG_STEP2_18
+            message_id=MSG_STEP2_18,
+            reply_markup=msg18_reply_markup
         )
     except Exception as e:
         logging.error(f"Could not send step 2 content to user {user_id}: {e}")
@@ -187,214 +198,30 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.chat_member
-    if not result:
-        return
-    
-    old_status = result.old_chat_member.status
-    new_status = result.new_chat_member.status
-    user = result.from_user
+    if not result:Msg ID 18 wale code/message object me aap niche diya gaya Inline Keyboard markup add kar sakte hain. Telegram me buttons ke custom colors (like blue) direct Telegram API support nahi karti, lekin aap emoji ka use karke usko attractive bana sakte hain.
 
-    if old_status in ["member", "administrator"] and new_status in ["left", "kicked"]:
-        log_event(user.id, "left")
+Yeh raha aapka updated Button Setup:
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    save_user_to_mongo(user.id, user.first_name, user.username)
-    
-    if context.args and context.args[0] == "bonus":
-        asyncio.create_task(send_full_original_flow(context, user.id))
-    else:
-        asyncio.create_task(send_initial_welcome(context, user.id, user.first_name))
+```python
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import urllib.parse
 
-async def handle_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+# Auto-fill message text
+msg_text = "Vijay sir mene payment kar diya hai niche screenshot bhej raha hu dekh lijiye"
 
-async def broadcast_worker(queue, context, message_to_broadcast, stats_dict):
-    reply_markup = message_to_broadcast.reply_markup
-    while not queue.empty():
-        u_id = await queue.get()
-        sent = False
-        retries = 3
+# URL encoding for telegram link
+encoded_text = urllib.parse.quote(msg_text)
+url_link = f"[https://t.me/vijaykiroriwal?text=](https://t.me/vijaykiroriwal?text=){encoded_text}"
 
-        while retries > 0 and not sent:
-            try:
-                if message_to_broadcast.text:
-                    await context.bot.send_message(
-                        chat_id=u_id, 
-                        text=message_to_broadcast.text, 
-                        entities=message_to_broadcast.entities,
-                        reply_markup=reply_markup,
-                        disable_web_page_preview=True
-                    )
-                elif message_to_broadcast.photo:
-                    await context.bot.send_photo(
-                        chat_id=u_id, 
-                        photo=message_to_broadcast.photo[-1].file_id, 
-                        caption=message_to_broadcast.caption, 
-                        caption_entities=message_to_broadcast.caption_entities,
-                        reply_markup=reply_markup
-                    )
-                elif message_to_broadcast.video:
-                    await context.bot.send_video(
-                        chat_id=u_id, 
-                        video=message_to_broadcast.video.file_id, 
-                        caption=message_to_broadcast.caption, 
-                        caption_entities=message_to_broadcast.caption_entities,
-                        reply_markup=reply_markup
-                    )
-                elif message_to_broadcast.audio:
-                    await context.bot.send_audio(
-                        chat_id=u_id, 
-                        audio=message_to_broadcast.audio.file_id, 
-                        caption=message_to_broadcast.caption, 
-                        caption_entities=message_to_broadcast.caption_entities,
-                        reply_markup=reply_markup
-                    )
-                elif message_to_broadcast.voice:
-                    await context.bot.send_voice(
-                        chat_id=u_id, 
-                        voice=message_to_broadcast.voice.file_id, 
-                        caption=message_to_broadcast.caption, 
-                        caption_entities=message_to_broadcast.caption_entities,
-                        reply_markup=reply_markup
-                    )
-                elif message_to_broadcast.document:
-                    await context.bot.send_document(
-                        chat_id=u_id, 
-                        document=message_to_broadcast.document.file_id, 
-                        caption=message_to_broadcast.caption, 
-                        caption_entities=message_to_broadcast.caption_entities,
-                        reply_markup=reply_markup
-                    )
-                
-                stats_dict["success"] += 1
-                sent = True
-            
-            except RetryAfter as e:
-                await asyncio.sleep(e.retry_after + 1)
-                retries -= 1
-            except TelegramError:
-                stats_dict["failed"] += 1
-                sent = True
-            except Exception as e:
-                logging.error(f"Unexpected Broadcast Error for {u_id}: {e}")
-                stats_dict["failed"] += 1
-                sent = True
+# Button Markup setup
+markup = InlineKeyboardMarkup()
+# Emoji ID - 5388971216629412467 (agar aap Premium Custom Emoji use kar rahe ho)
+button = InlineKeyboardButton(
+    text="🔵 SEND SCREENSHOT", 
+    url=url_link
+)
+markup.add(button)
 
-        queue.task_done()
-
-async def execute_broadcast(message_to_broadcast, context, admin_chat_id):
-    users = list(users_collection.find({"user_id": {"$nin": ADMIN_IDS}}, {"user_id": 1}))
-    total_users = len(users)
-
-    if total_users == 0:
-        await context.bot.send_message(chat_id=admin_chat_id, text="⚠️ Database me koi user nahi hai!")
-        return
-
-    await context.bot.send_message(
-        chat_id=admin_chat_id, 
-        text=f"🚀 **Parallel Multi-Worker Broadcast Started!**\nTargeting `{total_users}` users with {NUM_WORKERS} workers...",
-        parse_mode="Markdown"
-    )
-
-    queue = asyncio.Queue()
-    for u in users:
-        queue.put_nowait(u["user_id"])
-
-    stats_dict = {"success": 0, "failed": 0}
-
-    tasks = []
-    for _ in range(NUM_WORKERS):
-        task = asyncio.create_task(broadcast_worker(queue, context, message_to_broadcast, stats_dict))
-        tasks.append(task)
-
-    await queue.join()
-
-    for task in tasks:
-        task.cancel()
-
-    await context.bot.send_message(
-        chat_id=admin_chat_id, 
-        text=(
-            f"✅ **Broadcast Finished!**\n\n"
-            f"🟢 Successful: `{stats_dict['success']}`\n"
-            f"🔴 Failed/Blocked: `{stats_dict['failed']}`"
-        ), 
-        parse_mode="Markdown"
-    )
-
-async def auto_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-    if msg.text and msg.text.startswith("/"):
-        return
-    
-    asyncio.create_task(execute_broadcast(msg, context, update.effective_user.id))
-
-async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-
-    if msg.reply_to_message:
-        asyncio.create_task(execute_broadcast(msg.reply_to_message, context, update.effective_user.id))
-    else:
-        await msg.reply_text("⚠️ Kripya kisi message par reply karke `/broadcast` likhein ya direct message bhejain.")
-
-async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-
-    total_users = users_collection.count_documents({})
-
-    now = datetime.now(timezone.utc)
-    start_of_today = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-
-    today_joins = events_collection.count_documents({
-        "event_type": "join_request",
-        "timestamp": {"$gte": start_of_today}
-    })
-
-    today_lefts = events_collection.count_documents({
-        "event_type": "left",
-        "timestamp": {"$gte": start_of_today}
-    })
-
-    stats_msg = (
-        f'<tg-emoji emoji-id="{EMOJI_STATS_HEADER}">📊</tg-emoji> <b>LIVE BOT ANALYTICS</b>\n'
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f'<tg-emoji emoji-id="{EMOJI_TOTAL_USERS}">👤</tg-emoji> <b>Total Users:</b> <code>{total_users}</code>\n\n'
-        f'<tg-emoji emoji-id="{EMOJI_STATS_HEADER}">📈</tg-emoji> <b>TODAY\'S ACTIVITY</b>\n'
-        "━━━━━━━━━━━━━━━━━━━\n"
-        f'<tg-emoji emoji-id="{EMOJI_JOIN_REQS}">📥</tg-emoji> <b>Channel Join Requests:</b> <code>{today_joins}</code>\n'
-        f'<tg-emoji emoji-id="{EMOJI_LEFT_MEMBERS}">📤</tg-emoji> <b>Channel Left Members:</b> <code>{today_lefts}</code>'
-    )
-
-    await update.message.reply_text(stats_msg, parse_mode="HTML")
-
-def main():
-    Thread(target=run_web_server, daemon=True).start()
-
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("stats", stats))
-    app.add_handler(CommandHandler("broadcast", broadcast_command))
-    app.add_handler(ChatJoinRequestHandler(handle_join_request))
-    app.add_handler(ChatMemberHandler(handle_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
-    app.add_handler(CallbackQueryHandler(handle_button))
-    app.add_handler(MessageHandler(filters.User(ADMIN_IDS) & ~filters.COMMAND, auto_broadcast))
-
-    print("Bot is running...")
-    app.run_polling(allowed_updates=["message", "chat_join_request", "chat_member", "callback_query"])
-
-if __name__ == "__main__":
-    main()
+# Message ID 18 par bhejte ya edit karte waqt reply_markup=markup pass karein
+# Example for sending:
+# bot.send_message(chat_id, "Aapka message text...", reply_markup=markup)
