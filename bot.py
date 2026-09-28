@@ -198,30 +198,127 @@ async def handle_join_request(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_chat_member_update(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = update.chat_member
-    if not result:Msg ID 18 wale code/message object me aap niche diya gaya Inline Keyboard markup add kar sakte hain. Telegram me buttons ke custom colors (like blue) direct Telegram API support nahi karti, lekin aap emoji ka use karke usko attractive bana sakte hain.
+    if not result:
+        return
 
-Yeh raha aapka updated Button Setup:
+    user = result.from_user
+    save_user_to_mongo(user.id, user.first_name, user.username)
 
-```python
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import urllib.parse
+    new_status = result.new_chat_member.status
+    if new_status == "left":
+        log_event(user.id, "left")
 
-# Auto-fill message text
-msg_text = "Vijay sir mene payment kar diya hai niche screenshot bhej raha hu dekh lijiye"
+async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    save_user_to_mongo(user.id, user.first_name, user.username)
 
-# URL encoding for telegram link
-encoded_text = urllib.parse.quote(msg_text)
-url_link = f"[https://t.me/vijaykiroriwal?text=](https://t.me/vijaykiroriwal?text=){encoded_text}"
+    if context.args and context.args[0] == "bonus":
+        asyncio.create_task(send_full_original_flow(context, user.id))
+    else:
+        asyncio.create_task(send_initial_welcome(context, user.id, user.first_name))
 
-# Button Markup setup
-markup = InlineKeyboardMarkup()
-# Emoji ID - 5388971216629412467 (agar aap Premium Custom Emoji use kar rahe ho)
-button = InlineKeyboardButton(
-    text="🔵 SEND SCREENSHOT", 
-    url=url_link
-)
-markup.add(button)
+async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
 
-# Message ID 18 par bhejte ya edit karte waqt reply_markup=markup pass karein
-# Example for sending:
-# bot.send_message(chat_id, "Aapka message text...", reply_markup=markup)
+    try:
+        total_users = users_collection.count_documents({})
+        total_join_requests = events_collection.count_documents({"event_type": "join_request"})
+        total_left = events_collection.count_documents({"event_type": "left"})
+
+        stats_message = (
+            f"<b>BOT ANALYTICS DASHBOARD</b>\n\n"
+            f" Total Users in Database: {total_users}\n"
+            f" Total Join Requests Received: {total_join_requests}\n"
+            f" Users Left / Unsubscribed: {total_left}"
+        )
+        await update.message.reply_text(stats_message, parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"Error fetching stats: {e}")
+
+async def broadcast_worker(queue, context, source_chat_id, message_id, reply_markup, stats):
+    while True:
+        user_id = await queue.get()
+        try:
+            await context.bot.copy_message(
+                chat_id=user_id,
+                from_chat_id=source_chat_id,
+                message_id=message_id,
+                reply_markup=reply_markup
+            )
+            stats["success"] += 1
+        except RetryAfter as e:
+            await asyncio.sleep(e.retry_after)
+            try:
+                await context.bot.copy_message(
+                    chat_id=user_id,
+                    from_chat_id=source_chat_id,
+                    message_id=message_id,
+                    reply_markup=reply_markup
+                )
+                stats["success"] += 1
+            except Exception:
+                stats["failed"] += 1
+        except Exception as e:
+            stats["failed"] += 1
+            logging.error(f"Broadcast error for user {user_id}: {e}")
+        finally:
+            queue.task_done()
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ADMIN_IDS:
+        return
+
+    if not context.args or not context.args[0].isdigit():
+        await update.message.reply_text("<b>Usage:</b> /broadcast &lt;message_id&gt;", parse_mode="HTML")
+        return
+
+    message_id = int(context.args[0])
+    all_users = list(users_collection.find({}, {"user_id": 1}))
+    total_targets = len(all_users)
+
+    if total_targets == 0:
+        await update.message.reply_text("No users found in database to broadcast.")
+        return
+
+    status_msg = await update.message.reply_text(f"<b>Starting Broadcast to {total_targets} users...</b>", parse_mode="HTML")
+
+    queue = asyncio.Queue()
+    for u in all_users:
+        queue.put_nowait(u["user_id"])
+
+    stats = {"success": 0, "failed": 0}
+    workers = [
+        asyncio.create_task(broadcast_worker(queue, context, SOURCE_CHAT_ID, message_id, None, stats))
+        for _ in range(NUM_WORKERS)
+    ]
+
+    await queue.join()
+
+    for w in workers:
+        w.cancel()
+
+    await status_msg.edit_text(
+        f"<b>Broadcast Completed!</b>\n\n"
+        f" Success: {stats['success']}\n"
+        f" Failed: {stats['failed']}",
+        parse_mode="HTML"
+    )
+
+def main():
+    Thread(target=run_web_server, daemon=True).start()
+
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("broadcast", broadcast_command))
+    application.add_handler(ChatJoinRequestHandler(handle_join_request))
+    application.add_handler(ChatMemberHandler(handle_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
+
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
+
+if __name__ == "__main__":
+    main()
