@@ -19,13 +19,11 @@ from telegram.ext import (
     filters,
 )
 
-# Logging Setup
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
-# ==================== CONFIGURATION ====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN") 
 
 ADMIN_IDS = [5785924075, 8210667307]
@@ -33,29 +31,22 @@ MONGO_URI = os.environ.get("MONGO_URI")
 
 SOURCE_CHAT_ID = 5785924075
 
-# Step 1 Message IDs
 MSG_WELCOME_16 = 16
 MSG_INFO_14 = 14
-
-# Step 2 Message ID
 MSG_STEP2_18 = 18
 
-# Custom Emoji IDs
 EMOJI_RED_START = "4956222745814762495"
 EMOJI_TG_CHAT = "6170163662544707658"
 EMOJI_WA_CHAT = "5935973359480213803"
 EMOJI_FEEDBACK = "5332554596403404883"
 EMOJI_SCREENSHOT = "5388971216629412467"
 
-# Analytics Emojis
 EMOJI_STATS_HEADER = "5244837092042750681"
 EMOJI_TOTAL_USERS = "4938653911507534983"
 EMOJI_JOIN_REQS = "5156719794946311065"
 EMOJI_LEFT_MEMBERS = "5201913231836199981"
 
-# Broadcast performance settings
 NUM_WORKERS = 10
-# =======================================================
 
 mongo_client = MongoClient(MONGO_URI)
 db = mongo_client["telegram_bot_db"]
@@ -125,7 +116,6 @@ def styled_button(text, *, style, icon_custom_emoji_id=None, url=None, callback_
         except TypeError:
             return InlineKeyboardButton(text=text, **action)
 
-# --- STEP 1: INITIAL WELCOME FLOW (MSG 16 & MSG 14) ---
 async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     try:
         welcome_text = f"👋🏻 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 {first_name} ❤️‍🔥TO OUR PRIVATE SERVER 🔥\n\n"
@@ -166,10 +156,8 @@ async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int,
     except Exception as e:
         logging.error(f"Could not send initial welcome content to user {user_id}: {e}")
 
-# --- STEP 2: MAIN FLOW (MSG 18 WITH SCREENSHOT BUTTON) ---
 async def send_full_original_flow(context: ContextTypes.DEFAULT_TYPE, user_id: int):
     try:
-        # Pre-filled Message for Payment Screenshot
         autofill_text_18 = urllib.parse.quote("Vijay sir mene payment kar diya hai niche screenshot bhej raha hu dekh lijiye")
         tg_autofill_url_18 = f"https://t.me/vijaykiroriwal?text={autofill_text_18}"
 
