@@ -116,14 +116,14 @@ def styled_button(text, *, style, icon_custom_emoji_id=None, url=None, callback_
 
 async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int, first_name: str):
     try:
-        welcome_text = f"👋🏻 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 {first_name} ❤️‍🔥TO OUR PRIVATE SERVER 🔥\n\n"
+        welcome_text = f"👋🏻 𝐖𝐄𝐋𝐂𝐎𝐌𝐄 {first_name} ❤️‍🔥\n\n"
         await context.bot.send_message(chat_id=user_id, text=welcome_text)
 
         bot_info = await context.bot.get_me()
         start_link = f"https://t.me/{bot_info.username}?start=bonus"
 
         msg16_keyboard = [
-            [styled_button("Get Started", style="danger", icon_custom_emoji_id=EMOJI_RED_START, url=start_link)]
+            [styled_button("I'm Interested", style="danger", icon_custom_emoji_id=EMOJI_RED_START, url=start_link)]
         ]
         msg16_reply_markup = InlineKeyboardMarkup(msg16_keyboard)
 
@@ -138,8 +138,8 @@ async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int,
         tg_autofill_url_14 = f"https://t.me/vijaykiroriwal?text={autofill_text_14}"
 
         msg14_keyboard = [
-            [styled_button("Contact Vijay Bhai", style="primary", icon_custom_emoji_id=EMOJI_TG_CHAT, url=tg_autofill_url_14)],
-            [styled_button("WhatsApp Chat", style="success", icon_custom_emoji_id=EMOJI_WA_CHAT, url="https://alvo.chat/8aJ7")],
+            [styled_button("Telegram Chat", style="primary", icon_custom_emoji_id=EMOJI_TG_CHAT, url=tg_autofill_url_14)],
+            [styled_button("Whatsapp Chat", style="success", icon_custom_emoji_id=EMOJI_WA_CHAT, url="https://alvo.chat/8aJ7")],
             [styled_button("Feedback", style="danger", icon_custom_emoji_id=EMOJI_FEEDBACK, url="https://t.me/vijaykiroriwal")]
         ]
         msg14_reply_markup = InlineKeyboardMarkup(msg14_keyboard)
