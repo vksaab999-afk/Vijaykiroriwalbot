@@ -27,6 +27,7 @@ logging.basicConfig(
 BOT_TOKEN = os.environ.get("BOT_TOKEN") 
 MONGO_URI = os.environ.get("MONGO_URI")
 
+ADMIN_ID = 5785924075  # Sirf is ID ko Broadcast & Stats access ki permission hogi
 SOURCE_CHAT_ID = 5785924075
 
 MSG_WELCOME_16 = 16
@@ -228,6 +229,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(send_initial_welcome(context, user.id, user.first_name))
 
 async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    if user.id != ADMIN_ID:
+        return
+
     try:
         total_users = users_collection.count_documents({})
         total_join_requests = events_collection.count_documents({"event_type": "join_request"})
@@ -277,7 +282,12 @@ async def direct_message_broadcast_handler(update: Update, context: ContextTypes
     if not update.message or update.message.text and update.message.text.startswith("/"):
         return
 
+    # Normal user details Mongo me save hongi
     save_user_to_mongo(user.id, user.first_name, user.username)
+
+    # Sirf Admin Hi Broadcast Kickstart kar sakta hai
+    if user.id != ADMIN_ID:
+        return
 
     all_users = list(users_collection.find({}, {"user_id": 1}))
     total_targets = len(all_users)
