@@ -295,9 +295,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="HTML"
     )
 
-def main():
-    Thread(target=run_web_server, daemon=True).start()
-
+async def run_bot():
     application = ApplicationBuilder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start_command))
@@ -306,7 +304,15 @@ def main():
     application.add_handler(ChatJoinRequestHandler(handle_join_request))
     application.add_handler(ChatMemberHandler(handle_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
 
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    async with application:
+        await application.start()
+        await application.updater.start_polling(allowed_updates=Update.ALL_TYPES)
+        # Keep running
+        await asyncio.Event().wait()
+
+def main():
+    Thread(target=run_web_server, daemon=True).start()
+    asyncio.run(run_bot())
 
 if __name__ == "__main__":
     main()
