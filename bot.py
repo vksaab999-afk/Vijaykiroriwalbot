@@ -135,7 +135,7 @@ async def send_initial_welcome(context: ContextTypes.DEFAULT_TYPE, user_id: int,
             reply_markup=msg16_reply_markup
         )
 
-        autofill_text_14 = urllib.parse.quote("Vijay bhai mujhe work shuru karna hai")
+        autofill_text_14 = urllib.parse.quote("Vijay Sir mujhe work shuru karna hai")
         tg_autofill_url_14 = f"https://t.me/vijaykiroriwal?text={autofill_text_14}"
 
         msg14_keyboard = [
